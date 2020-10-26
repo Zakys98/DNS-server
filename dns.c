@@ -43,19 +43,6 @@ struct QUESTION {
     unsigned short qclass;
 };
 
-struct R_DATA {
-    unsigned short type;
-    unsigned short _class;
-    unsigned int ttl;
-    unsigned short data_len;
-};
-
-struct RES_RECORD {
-    unsigned char *name;
-    struct R_DATA *resource;
-    unsigned char *rdata;
-};
-
 // Global variables
 unsigned char buffer[RCVBUFSIZE];
 Args *arguments;
@@ -70,10 +57,6 @@ void changeToDnsNameFormat(unsigned char *, unsigned char *);
 
 int main(int argc, char **argv) {
     if (parseArguments(argc, argv) == 1) exit(1);
-
-    printf("dns resolver: %s\n", arguments->server);
-    printf("filter file: %s\n", arguments->filter);
-    printf("port: %d\n\n", arguments->port);
 
     int server_fd;
     struct sockaddr_in serverAddr;
@@ -109,7 +92,6 @@ int main(int argc, char **argv) {
 }
 
 void HandleUDPClient(int socket, struct sockaddr_in clientAddr) {
-
     struct DNS_HEADER *dns = NULL;
     struct QUESTION *qinfo = NULL;
     unsigned char *qname;
@@ -135,15 +117,15 @@ void HandleUDPClient(int socket, struct sockaddr_in clientAddr) {
             printf("send back to client that adress is filtered\n");
             dns->qr = dns->rd = dns->ra = 1;
             dns->rcode = 3;
-            sendto(socket, buffer, RCVBUFSIZE, 0, (struct sockaddr *)&clientAddr,
-               sizeof(clientAddr));
+            sendto(socket, buffer, RCVBUFSIZE, 0,
+                   (struct sockaddr *)&clientAddr, sizeof(clientAddr));
         }
     } else {
         // send not implemented
         dns->qr = dns->rd = dns->ra = 1;
         dns->rcode = 4;
-        sendto(socket, buffer, RCVBUFSIZE - 1, 0, (struct sockaddr *)&clientAddr,
-               sizeof(clientAddr));
+        sendto(socket, buffer, RCVBUFSIZE - 1, 0,
+               (struct sockaddr *)&clientAddr, sizeof(clientAddr));
     }
 }
 
@@ -208,8 +190,8 @@ void send_to_resolver(unsigned char *resolverName, int serverSocket,
 
     if (recvMsgResolver > 0) {
         printf("Recieve answer, size %ld\n", recvMsgResolver);
-        sendto(serverSocket, (char *)buffer, recvMsgResolver, 0, (struct sockaddr *)&clientAddr,
-               sizeof(clientAddr));
+        sendto(serverSocket, (char *)buffer, recvMsgResolver, 0,
+               (struct sockaddr *)&clientAddr, sizeof(clientAddr));
     }
 }
 
