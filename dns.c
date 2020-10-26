@@ -8,7 +8,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define RCVBUFSIZE 256
+#define RCVBUFSIZE 50
 #define T_A 1
 
 typedef struct args {
@@ -61,12 +61,12 @@ unsigned char buffer[RCVBUFSIZE];
 Args *arguments;
 
 // Prototypes
-void HandleUDPClient(int, char *, struct sockaddr_in, unsigned long);
+void HandleUDPClient(int, struct sockaddr_in);
 int parseArguments(int, char **);
 unsigned char *translateName(unsigned char *, unsigned char *, int *);
 int filter_file(unsigned char *);
-void send_to_resolver(unsigned char *);
-void ChangetoDnsNameFormat(unsigned char *, unsigned char *);
+void send_to_resolver(unsigned char *, int, struct sockaddr_in, int);
+void changeToDnsNameFormat(unsigned char *, unsigned char *);
 
 int main(int argc, char **argv) {
     if (parseArguments(argc, argv) == 1) exit(1);
@@ -101,20 +101,14 @@ int main(int argc, char **argv) {
                                    (struct sockaddr *)&clientAddr, &clientLen);
 
         if (recvMessageSize > 0) {
-            HandleUDPClient(server_fd, inet_ntoa(clientAddr.sin_addr),
-                            clientAddr, recvMessageSize);
+            HandleUDPClient(server_fd, clientAddr);
         }
     }
 
     return 0;
 }
 
-void HandleUDPClient(int socket, char *clientIp, struct sockaddr_in clientAddr,
-                     unsigned long recvMsgSize) {
-    (void)socket;
-    (void)clientIp;
-    (void)clientAddr;
-    (void)recvMsgSize;
+void HandleUDPClient(int socket, struct sockaddr_in clientAddr) {
 
     struct DNS_HEADER *dns = NULL;
     struct QUESTION *qinfo = NULL;
@@ -127,9 +121,8 @@ void HandleUDPClient(int socket, char *clientIp, struct sockaddr_in clientAddr,
                                        (strlen((const char *)qname) + 1)];
 
     printf("z: %d\n", htons(dns->z));
-    printf("query: %d\n", htons(dns->qr));
 
-    if (htons(qinfo->qtype) == 1) {
+    if (htons(qinfo->qtype) == 1 && htons(dns->qr) == 0) {
         int stop = 0;
         unsigned char *name_with_sub = translateName(qname, buffer, &stop);
         printf("name with subdomena: %s\n", name_with_sub);
@@ -137,23 +130,32 @@ void HandleUDPClient(int socket, char *clientIp, struct sockaddr_in clientAddr,
         printf("name: %s\n", name);
         if (filter_file(name) == 0) {
             printf("\nsend to resolver\n");
-            send_to_resolver(name);
+            send_to_resolver(name, socket, clientAddr, htons(dns->id));
         } else {
-            printf("send back to client\n");
+            printf("send back to client that adress is filtered\n");
+            dns->qr = dns->rd = dns->ra = 1;
+            dns->rcode = 3;
+            sendto(socket, buffer, RCVBUFSIZE, 0, (struct sockaddr *)&clientAddr,
+               sizeof(clientAddr));
         }
     } else {
-        printf("Not implemented yet!\n");
+        // send not implemented
+        dns->qr = dns->rd = dns->ra = 1;
+        dns->rcode = 4;
+        sendto(socket, buffer, RCVBUFSIZE - 1, 0, (struct sockaddr *)&clientAddr,
+               sizeof(clientAddr));
     }
 }
 
-void send_to_resolver(unsigned char *resolverName) {
+void send_to_resolver(unsigned char *resolverName, int serverSocket,
+                      struct sockaddr_in clientAddr, int id) {
     struct DNS_HEADER *dns = NULL;
     struct QUESTION *qinfo = NULL;
     struct sockaddr_in dest;
-    int s;
+    int resolver_fd;
     unsigned char buffer[2048], *qname;
 
-    s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    resolver_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
     dest.sin_family = AF_INET;
     dest.sin_port = htons(53);
@@ -179,7 +181,7 @@ void send_to_resolver(unsigned char *resolverName) {
 
     qname = (unsigned char *)&buffer[sizeof(struct DNS_HEADER)];
 
-    ChangetoDnsNameFormat(qname, resolverName);
+    changeToDnsNameFormat(qname, resolverName);
     qinfo = (struct QUESTION *)&buffer[sizeof(struct DNS_HEADER) +
                                        (strlen((const char *)qname) + 1)];
 
@@ -187,7 +189,7 @@ void send_to_resolver(unsigned char *resolverName) {
     qinfo->qclass = htons(1);
 
     printf("Before send\n");
-    if (sendto(s, (char *)buffer,
+    if (sendto(resolver_fd, (char *)buffer,
                sizeof(struct DNS_HEADER) + (strlen((const char *)qname) + 1) +
                    sizeof(struct QUESTION),
                0, (struct sockaddr *)&dest, sizeof(dest)) < 0) {
@@ -197,14 +199,21 @@ void send_to_resolver(unsigned char *resolverName) {
     int i = sizeof(dest);
     unsigned long recvMsgResolver;
 
-    recvMsgResolver = recvfrom(s, (char *)buffer, 2048, 0,
+    recvMsgResolver = recvfrom(resolver_fd, (char *)buffer, 2048, 0,
                                (struct sockaddr *)&dest, (socklen_t *)&i);
-    
-    if(recvMsgResolver > 0)
+
+    dns = (struct DNS_HEADER *)&buffer;
+    dns->id = htons(id);
+    dns->ad = 0;
+
+    if (recvMsgResolver > 0) {
         printf("Recieve answer, size %ld\n", recvMsgResolver);
+        sendto(serverSocket, (char *)buffer, recvMsgResolver, 0, (struct sockaddr *)&clientAddr,
+               sizeof(clientAddr));
+    }
 }
 
-void ChangetoDnsNameFormat(unsigned char *dns, unsigned char *host) {
+void changeToDnsNameFormat(unsigned char *dns, unsigned char *host) {
     unsigned int lock = 0;
     strcat((char *)host, ".");
 
