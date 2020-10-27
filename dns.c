@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <signal.h>
 
 #define RCVBUFSIZE 50
 #define T_A 1
@@ -44,24 +45,33 @@ struct QUESTION {
 };
 
 // Global variables
-unsigned char buffer[RCVBUFSIZE];
 Args *arguments;
 
+void intHandler(){
+    free(arguments->filter);
+    free(arguments->server);
+    free(arguments);
+    exit(0);
+}
+
 // Prototypes
-void HandleUDPClient(int, struct sockaddr_in);
+void parsePacket(int, struct sockaddr_in, unsigned char *);
 int parseArguments(int, char **);
 unsigned char *translateName(unsigned char *, unsigned char *, int *);
-int filter_file(unsigned char *);
+int filterFile(unsigned char *);
 void send_to_resolver(unsigned char *, int, struct sockaddr_in, int);
 void changeToDnsNameFormat(unsigned char *, unsigned char *);
 
 int main(int argc, char **argv) {
+
+    signal(SIGINT, intHandler);
     if (parseArguments(argc, argv) == 1) exit(1);
 
     int server_fd;
     struct sockaddr_in serverAddr;
     struct sockaddr_in clientAddr;
     unsigned long recvMessageSize;
+    unsigned char buffer[RCVBUFSIZE];
 
     if ((server_fd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
         exit(1);
@@ -84,14 +94,15 @@ int main(int argc, char **argv) {
                                    (struct sockaddr *)&clientAddr, &clientLen);
 
         if (recvMessageSize > 0) {
-            HandleUDPClient(server_fd, clientAddr);
+            parsePacket(server_fd, clientAddr, buffer);
         }
     }
 
     return 0;
 }
 
-void HandleUDPClient(int socket, struct sockaddr_in clientAddr) {
+void parsePacket(int socket, struct sockaddr_in clientAddr,
+                 unsigned char *buffer) {
     struct DNS_HEADER *dns = NULL;
     struct QUESTION *qinfo = NULL;
     unsigned char *qname;
@@ -102,24 +113,25 @@ void HandleUDPClient(int socket, struct sockaddr_in clientAddr) {
     qinfo = (struct QUESTION *)&buffer[sizeof(struct DNS_HEADER) +
                                        (strlen((const char *)qname) + 1)];
 
-    printf("z: %d\n", htons(dns->z));
-
-    if (htons(qinfo->qtype) == 1 && htons(dns->qr) == 0) {
+    // osetrit kdyz prijde odpoved a ne query (pridat else if)
+    if (htons(qinfo->qtype) == 1 && htons(dns->qr) == 0 && htons(dns->z) == 0) {
         int stop = 0;
         unsigned char *name_with_sub = translateName(qname, buffer, &stop);
         printf("name with subdomena: %s\n", name_with_sub);
         unsigned char *name = strtok((char *)name_with_sub, "/");
         printf("name: %s\n", name);
-        if (filter_file(name) == 0) {
-            printf("\nsend to resolver\n");
+        if (filterFile(name) == 0) {
+            // adress is not filtered
             send_to_resolver(name, socket, clientAddr, htons(dns->id));
         } else {
-            printf("send back to client that adress is filtered\n");
+            // adress is filtered
             dns->qr = dns->rd = dns->ra = 1;
+            dns->ad = 0;
             dns->rcode = 3;
             sendto(socket, buffer, RCVBUFSIZE, 0,
                    (struct sockaddr *)&clientAddr, sizeof(clientAddr));
         }
+        free(name_with_sub);
     } else {
         // send not implemented
         dns->qr = dns->rd = dns->ra = 1;
@@ -135,7 +147,7 @@ void send_to_resolver(unsigned char *resolverName, int serverSocket,
     struct QUESTION *qinfo = NULL;
     struct sockaddr_in dest;
     int resolver_fd;
-    unsigned char buffer[2048], *qname;
+    unsigned char buffer[RCVBUFSIZE], *qname;
 
     resolver_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
@@ -170,7 +182,6 @@ void send_to_resolver(unsigned char *resolverName, int serverSocket,
     qinfo->qtype = htons(T_A);
     qinfo->qclass = htons(1);
 
-    printf("Before send\n");
     if (sendto(resolver_fd, (char *)buffer,
                sizeof(struct DNS_HEADER) + (strlen((const char *)qname) + 1) +
                    sizeof(struct QUESTION),
@@ -181,15 +192,13 @@ void send_to_resolver(unsigned char *resolverName, int serverSocket,
     int i = sizeof(dest);
     unsigned long recvMsgResolver;
 
-    recvMsgResolver = recvfrom(resolver_fd, (char *)buffer, 2048, 0,
+    recvMsgResolver = recvfrom(resolver_fd, (char *)buffer, RCVBUFSIZE, 0,
                                (struct sockaddr *)&dest, (socklen_t *)&i);
 
     dns = (struct DNS_HEADER *)&buffer;
     dns->id = htons(id);
-    dns->ad = 0;
 
     if (recvMsgResolver > 0) {
-        printf("Recieve answer, size %ld\n", recvMsgResolver);
         sendto(serverSocket, (char *)buffer, recvMsgResolver, 0,
                (struct sockaddr *)&clientAddr, sizeof(clientAddr));
     }
@@ -211,7 +220,7 @@ void changeToDnsNameFormat(unsigned char *dns, unsigned char *host) {
     *dns++ = '\0';
 }
 
-int filter_file(unsigned char *name) {
+int filterFile(unsigned char *name) {
     FILE *fp;
     char *line = NULL;
     size_t len = 0;
@@ -230,6 +239,7 @@ int filter_file(unsigned char *name) {
             break;
         }
     }
+    free(line);
     fclose(fp);
 
     return ret_code;
@@ -288,14 +298,14 @@ int parseArguments(int argc, char **argv) {
         if (strcmp(argv[i], "-s") == 0) {
             if (argv[i + 1] != NULL) {
                 arguments->server =
-                    (char *)malloc(sizeof(char) * strlen(argv[i + 1] + 1));
+                    (char *)malloc(sizeof(char) * (strlen(argv[i + 1]) + 1));
                 strcpy(arguments->server, argv[i + 1]);
             }
         }
         if (strcmp(argv[i], "-f") == 0) {
             if (argv[i + 1] != NULL) {
                 arguments->filter =
-                    (char *)malloc(sizeof(char) * strlen(argv[i + 1] + 1));
+                    (char *)malloc(sizeof(char) * (strlen(argv[i + 1]) + 1));
                 strcpy(arguments->filter, argv[i + 1]);
             }
         }
