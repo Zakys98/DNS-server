@@ -58,7 +58,16 @@ void sigintHandler();
 
 int main(int argc, char **argv) {
     signal(SIGINT, sigintHandler);
-    if (parseArguments(argc, argv) == 1) exit(1);
+    if (parseArguments(argc, argv) == 1){
+        if(arguments != NULL){
+            if(arguments->filter != NULL)
+                free(arguments->filter);
+            if(arguments->server != NULL)
+                free(arguments->server);    
+            free(arguments);
+        }
+        exit(1);
+    } 
 
     int server_fd;
     struct sockaddr_in serverAddr;
@@ -119,7 +128,7 @@ void parsePacket(int socket, struct sockaddr_in clientAddr,
             // adress is filtered
             dns->qr = dns->rd = dns->ra = 1;
             dns->ad = 0;
-            dns->rcode = 3;
+            dns->rcode = 5;
             sendto(socket, buffer, RCVBUFSIZE, 0,
                    (struct sockaddr *)&clientAddr, sizeof(clientAddr));
         }
@@ -276,6 +285,7 @@ int parseArguments(int argc, char **argv) {
     arguments = (Args *)malloc(sizeof(Args));
     if (arguments == NULL) return 1;
     arguments->port = 53;
+    arguments->filter = arguments->server = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-s") == 0) {

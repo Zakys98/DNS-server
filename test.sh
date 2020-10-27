@@ -1,11 +1,11 @@
 dig @127.0.0.1 -p 3333 google.com
-dig google.com
-dig @127.0.0.53 google.com
+dig @127.0.0.1 -p 3333 www.seznam.com
 
 echo "#################################"
 echo "Filtered adress"
 echo "#################################"
-dig @127.0.0.1 -p 3333 24log.com	
+dig @127.0.0.1 -p 3333 24log.com
+dig @127.0.0.1 -p 3333 thebugs.ws	
 
 echo "#################################"
 echo "Not implemented"
