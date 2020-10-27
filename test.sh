@@ -20,12 +20,10 @@ dig @127.0.0.1 -p 3333 gooasdasdagle.com
 dig gooasdasdagle.com
 
 # jde o to jesltli posílám na autorativní dns resolver nebo ne
-# sudo ./dns -p 3333 -f test_soubor -s 8.8.8.8
-# sudo ./dns -p 3333 -f test_soubor -s 127.0.0.53
+# sudo ./dns -p 3333 -f test_soubor -s 8.8.8.8 					autorativní server
+# sudo ./dns -p 3333 -f test_soubor -s 127.0.0.53				neautorativní server
+# sudo ./dns -p 3333 -f bad_domain_name_long - -s 2001:4860:4860::8844		ipv6 server
 # sudo valgrind --leak-check=full ./dns -p 3333 -f test_soubor -s 8.8.8.8
-
-
-
 
 
 

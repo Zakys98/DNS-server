@@ -50,6 +50,7 @@ Args *arguments;
 // Prototypes
 void parsePacket(int, struct sockaddr_in, unsigned char *);
 int parseArguments(int, char **);
+void checkResolverName();
 unsigned char *translateName(unsigned char *, unsigned char *);
 int filterFile(unsigned char *);
 void send_to_resolver(unsigned char *, int, struct sockaddr_in, int);
@@ -58,16 +59,17 @@ void sigintHandler();
 
 int main(int argc, char **argv) {
     signal(SIGINT, sigintHandler);
-    if (parseArguments(argc, argv) == 1){
-        if(arguments != NULL){
-            if(arguments->filter != NULL)
-                free(arguments->filter);
-            if(arguments->server != NULL)
-                free(arguments->server);    
+    if (parseArguments(argc, argv) == 1) {
+        if (arguments != NULL) {
+            if (arguments->filter != NULL) free(arguments->filter);
+            if (arguments->server != NULL) free(arguments->server);
             free(arguments);
         }
         exit(1);
-    } 
+    }
+
+    checkResolverName();
+    printf("server adress: %s\n", arguments->server);
 
     int server_fd;
     struct sockaddr_in serverAddr;
@@ -279,6 +281,22 @@ unsigned char *translateName(unsigned char *reader, unsigned char *buffer) {
     }
     name[i - 1] = '\0';
     return name;
+}
+
+void checkResolverName() {
+    struct hostent *he = NULL;
+    struct in_addr a;
+    he = gethostbyname(arguments->server);
+    if (he) {
+        while (*he->h_addr_list) {
+            bcopy(*he->h_addr_list++, (char *)&a, sizeof(a));
+            arguments->server = (char *)realloc(arguments->server, strlen(inet_ntoa(a)) + 1);
+            if(arguments->server == NULL)
+                exit(1);
+            strcpy(arguments->server, inet_ntoa(a));
+            break;
+        }
+    }
 }
 
 int parseArguments(int argc, char **argv) {
