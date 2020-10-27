@@ -2,12 +2,12 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <signal.h>
 
 #define RCVBUFSIZE 50
 #define T_A 1
@@ -47,24 +47,17 @@ struct QUESTION {
 // Global variables
 Args *arguments;
 
-void intHandler(){
-    free(arguments->filter);
-    free(arguments->server);
-    free(arguments);
-    exit(0);
-}
-
 // Prototypes
 void parsePacket(int, struct sockaddr_in, unsigned char *);
 int parseArguments(int, char **);
-unsigned char *translateName(unsigned char *, unsigned char *, int *);
+unsigned char *translateName(unsigned char *, unsigned char *);
 int filterFile(unsigned char *);
 void send_to_resolver(unsigned char *, int, struct sockaddr_in, int);
 void changeToDnsNameFormat(unsigned char *, unsigned char *);
+void sigintHandler();
 
 int main(int argc, char **argv) {
-
-    signal(SIGINT, intHandler);
+    signal(SIGINT, sigintHandler);
     if (parseArguments(argc, argv) == 1) exit(1);
 
     int server_fd;
@@ -115,8 +108,7 @@ void parsePacket(int socket, struct sockaddr_in clientAddr,
 
     // osetrit kdyz prijde odpoved a ne query (pridat else if)
     if (htons(qinfo->qtype) == 1 && htons(dns->qr) == 0 && htons(dns->z) == 0) {
-        int stop = 0;
-        unsigned char *name_with_sub = translateName(qname, buffer, &stop);
+        unsigned char *name_with_sub = translateName(qname, buffer);
         printf("name with subdomena: %s\n", name_with_sub);
         unsigned char *name = strtok((char *)name_with_sub, "/");
         printf("name: %s\n", name);
@@ -136,7 +128,9 @@ void parsePacket(int socket, struct sockaddr_in clientAddr,
         // send not implemented
         dns->qr = dns->rd = dns->ra = 1;
         dns->rcode = 4;
-        sendto(socket, buffer, RCVBUFSIZE - 1, 0,
+        dns->ad = 0;
+        dns->add_count = 0;
+        sendto(socket, buffer, RCVBUFSIZE - 5, 0,
                (struct sockaddr *)&clientAddr, sizeof(clientAddr));
     }
 }
@@ -199,6 +193,7 @@ void send_to_resolver(unsigned char *resolverName, int serverSocket,
     dns->id = htons(id);
 
     if (recvMsgResolver > 0) {
+        printf("\nsend back to client message size %ld\n", recvMsgResolver);
         sendto(serverSocket, (char *)buffer, recvMsgResolver, 0,
                (struct sockaddr *)&clientAddr, sizeof(clientAddr));
     }
@@ -245,41 +240,29 @@ int filterFile(unsigned char *name) {
     return ret_code;
 }
 
-unsigned char *translateName(unsigned char *reader, unsigned char *buffer,
-                             int *count) {
+unsigned char *translateName(unsigned char *reader, unsigned char *buffer) {
     unsigned char *name;
-    unsigned int p = 0, jumped = 0, offset;
-    int i, j;
+    unsigned int p = 0, offset;
 
-    *count = 1;
     name = (unsigned char *)malloc(256);
 
     name[0] = '\0';
-
     while (*reader != 0) {
         if (*reader >= 192) {
             offset = (*reader) * 256 + *(reader + 1) - 49152;
             reader = buffer + offset - 1;
-            jumped = 1;
         } else {
             name[p++] = *reader;
         }
-
         reader = reader + 1;
-
-        if (jumped == 0) {
-            *count = *count + 1;
-        }
     }
 
     name[p] = '\0';
-    if (jumped == 1) {
-        *count = *count + 1;
-    }
 
+    int i;
     for (i = 0; i < (int)strlen((const char *)name); i++) {
         p = name[i];
-        for (j = 0; j < (int)p; j++) {
+        for (int j = 0; j < (int)p; j++) {
             name[i] = name[i + 1];
             i = i + 1;
         }
@@ -315,4 +298,11 @@ int parseArguments(int argc, char **argv) {
     }
     if (arguments->filter == NULL || arguments->server == NULL) return 1;
     return 0;
+}
+
+void sigintHandler() {
+    free(arguments->filter);
+    free(arguments->server);
+    free(arguments);
+    exit(0);
 }

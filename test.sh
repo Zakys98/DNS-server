@@ -1,5 +1,6 @@
 dig @127.0.0.1 -p 3333 google.com
 dig google.com
+dig @127.0.0.53 google.com
 
 echo "#################################"
 echo "Filtered adress"
@@ -10,6 +11,7 @@ echo "#################################"
 echo "Not implemented"
 echo "#################################"
 dig @127.0.0.1 -p 3333 -x 216.58.220.110 #repair 
+dig +noedns @127.0.0.1 -p 3333 -x 216.58.220.110
 
 echo "#################################"
 echo "not existing adress"
