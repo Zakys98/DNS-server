@@ -1,12 +1,12 @@
-CFLAGS= -std=c99 -Wextra -pedantic -Wall
+CPPFLAGS= -std=c++11 -Wextra -pedantic -Wall
 
 all: dns
 
 dns: dns.o
-	gcc $(CFLAGS) dns.o -o dns
+	g++ $(CPPFLAGS) dns.o -o dns
 
-dns.o: dns.c
-	gcc $(CFLAGS) -c dns.c
+dns.o: dns.cc
+	g++ $(CPPFLAGS) -c dns.cc
 
 clean:
 	rm *.o dns

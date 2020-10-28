@@ -1,3 +1,4 @@
 *.o
 dns
 examples.zip
+.vscode

@@ -1,15 +1,19 @@
-#define _GNU_SOURCE
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define RCVBUFSIZE 50
+#include <algorithm>
+#include <csignal>
+#include <fstream>
+#include <iostream>
+#include <vector>
+
+#define RCVBUFSIZE 512
 #define T_A 1
 
 typedef struct args {
@@ -48,14 +52,16 @@ struct QUESTION {
 Args *arguments;
 
 // Prototypes
-void parsePacket(int, struct sockaddr_in, unsigned char *);
+void parsePacket(int, struct sockaddr_in, unsigned char *, unsigned long,
+                 std::vector<std::string>);
+void loadFile(std::vector<std::string> &);
 int parseArguments(int, char **);
 void checkResolverName();
 unsigned char *translateName(unsigned char *, unsigned char *);
-int filterFile(unsigned char *);
+int filterFile(std::vector<std::string> &, std::string &);
 void send_to_resolver(unsigned char *, int, struct sockaddr_in, int);
 void changeToDnsNameFormat(unsigned char *, unsigned char *);
-void sigintHandler();
+void sigintHandler(int);
 
 int main(int argc, char **argv) {
     signal(SIGINT, sigintHandler);
@@ -69,7 +75,8 @@ int main(int argc, char **argv) {
     }
 
     checkResolverName();
-    printf("server adress: %s\n", arguments->server);
+    std::vector<std::string> filteredDomains;
+    loadFile(filteredDomains);
 
     int server_fd;
     struct sockaddr_in serverAddr;
@@ -98,7 +105,7 @@ int main(int argc, char **argv) {
                                    (struct sockaddr *)&clientAddr, &clientLen);
 
         if (recvMessageSize > 0) {
-            parsePacket(server_fd, clientAddr, buffer);
+            parsePacket(server_fd, clientAddr, buffer, recvMessageSize, filteredDomains);
         }
     }
 
@@ -106,7 +113,8 @@ int main(int argc, char **argv) {
 }
 
 void parsePacket(int socket, struct sockaddr_in clientAddr,
-                 unsigned char *buffer) {
+                 unsigned char *buffer, unsigned long bufferSize,
+                 std::vector<std::string> filteredDomains) {
     struct DNS_HEADER *dns = NULL;
     struct QUESTION *qinfo = NULL;
     unsigned char *qname;
@@ -120,18 +128,26 @@ void parsePacket(int socket, struct sockaddr_in clientAddr,
     // osetrit kdyz prijde odpoved a ne query (pridat else if)
     if (htons(qinfo->qtype) == 1 && htons(dns->qr) == 0 && htons(dns->z) == 0) {
         unsigned char *name_with_sub = translateName(qname, buffer);
-        printf("name with subdomena: %s\n", name_with_sub);
-        unsigned char *name = strtok((char *)name_with_sub, "/");
-        printf("name: %s\n", name);
-        if (filterFile(name) == 0) {
+        std::cout << "name with sub" << name_with_sub << std::endl;
+        std::string s(reinterpret_cast<char *>(name_with_sub));
+        s = s.substr(0, s.find("/"));
+        if (filterFile(filteredDomains, s) == 0) {
             // adress is not filtered
+            // unsigned char *name = (unsigned char *)strtok((char
+            // *)name_with_sub, "/"); std::cout << name << strlen((const
+            // char*)name) << std::endl;
+            unsigned char name[128];
+            std::copy(s.begin(), s.end(), name);
+            name[s.length()] = 0;
+            std::cout << name << strlen((const char *)name) << std::endl;
             send_to_resolver(name, socket, clientAddr, htons(dns->id));
         } else {
             // adress is filtered
-            dns->qr = dns->rd = dns->ra = 1;
-            dns->ad = 0;
+            dns->qr = dns->rd = 1;
+            dns->ad = dns->ra = 0;
+            dns->add_count = 0; // cookiesky
             dns->rcode = 5;
-            sendto(socket, buffer, RCVBUFSIZE, 0,
+            sendto(socket, buffer, bufferSize, 0,
                    (struct sockaddr *)&clientAddr, sizeof(clientAddr));
         }
         free(name_with_sub);
@@ -140,8 +156,8 @@ void parsePacket(int socket, struct sockaddr_in clientAddr,
         dns->qr = dns->rd = dns->ra = 1;
         dns->rcode = 4;
         dns->ad = 0;
-        dns->add_count = 0;
-        sendto(socket, buffer, RCVBUFSIZE - 5, 0,
+        
+        sendto(socket, buffer, bufferSize, 0,
                (struct sockaddr *)&clientAddr, sizeof(clientAddr));
     }
 }
@@ -181,6 +197,8 @@ void send_to_resolver(unsigned char *resolverName, int serverSocket,
     qname = (unsigned char *)&buffer[sizeof(struct DNS_HEADER)];
 
     changeToDnsNameFormat(qname, resolverName);
+    std::cout << qname << std::endl;
+    std::cout << resolverName << std::endl;
     qinfo = (struct QUESTION *)&buffer[sizeof(struct DNS_HEADER) +
                                        (strlen((const char *)qname) + 1)];
 
@@ -193,19 +211,18 @@ void send_to_resolver(unsigned char *resolverName, int serverSocket,
                0, (struct sockaddr *)&dest, sizeof(dest)) < 0) {
         perror("sendto failed");
     }
-
+    
     int i = sizeof(dest);
-    unsigned long recvMsgResolver;
+    unsigned long recvMsgResolverSize;
 
-    recvMsgResolver = recvfrom(resolver_fd, (char *)buffer, RCVBUFSIZE, 0,
+    recvMsgResolverSize = recvfrom(resolver_fd, (char *)buffer, RCVBUFSIZE, 0,
                                (struct sockaddr *)&dest, (socklen_t *)&i);
 
     dns = (struct DNS_HEADER *)&buffer;
     dns->id = htons(id);
 
-    if (recvMsgResolver > 0) {
-        printf("\nsend back to client message size %ld\n", recvMsgResolver);
-        sendto(serverSocket, (char *)buffer, recvMsgResolver, 0,
+    if (recvMsgResolverSize > 0) {
+        sendto(serverSocket, (char *)buffer, recvMsgResolverSize, 0,
                (struct sockaddr *)&clientAddr, sizeof(clientAddr));
     }
 }
@@ -226,29 +243,10 @@ void changeToDnsNameFormat(unsigned char *dns, unsigned char *host) {
     *dns++ = '\0';
 }
 
-int filterFile(unsigned char *name) {
-    FILE *fp;
-    char *line = NULL;
-    size_t len = 0;
-    ssize_t read;
-    int ret_code = 0;
-
-    fp = fopen(arguments->filter, "r");
-    if (fp == NULL) exit(1);
-
-    while ((read = getline(&line, &len, fp)) != -1) {
-        line[read - 1] = '\0';
-        if (line[0] == '#' || line[0] == '\0') {
-            continue;
-        } else if (strcmp(line, (char *)name) == 0) {
-            ret_code = 1;
-            break;
-        }
-    }
-    free(line);
-    fclose(fp);
-
-    return ret_code;
+int filterFile(std::vector<std::string> &vc, std::string &s) {
+    std::vector<std::string>::iterator it = find(vc.begin(), vc.end(), s);
+    if (it != vc.end()) return 1;
+    return 0;
 }
 
 unsigned char *translateName(unsigned char *reader, unsigned char *buffer) {
@@ -290,13 +288,26 @@ void checkResolverName() {
     if (he) {
         while (*he->h_addr_list) {
             bcopy(*he->h_addr_list++, (char *)&a, sizeof(a));
-            arguments->server = (char *)realloc(arguments->server, strlen(inet_ntoa(a)) + 1);
-            if(arguments->server == NULL)
-                exit(1);
+            arguments->server =
+                (char *)realloc(arguments->server, strlen(inet_ntoa(a)) + 1);
+            if (arguments->server == NULL) exit(1);
             strcpy(arguments->server, inet_ntoa(a));
             break;
         }
     }
+}
+
+void loadFile(std::vector<std::string> &vc) {
+    std::ifstream f;
+    f.open(arguments->filter);
+    if (f.is_open()) {
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line[0] != '#' && !line.empty()) vc.push_back(line);
+        }
+    }
+    f.close();
+    sort(vc.begin(), vc.end());
 }
 
 int parseArguments(int argc, char **argv) {
@@ -328,9 +339,10 @@ int parseArguments(int argc, char **argv) {
     return 0;
 }
 
-void sigintHandler() {
+void sigintHandler(int number) {
     free(arguments->filter);
     free(arguments->server);
     free(arguments);
-    exit(0);
+    number = 0;
+    exit(number);
 }
