@@ -2,6 +2,7 @@ dig @127.0.0.1 -p 3333 google.com
 dig @127.0.0.1 -p 3333 www.seznam.com
 dig @127.0.0.1 -p 3333 www.seznam.cz
 
+# chyba asi je že pošlu zpět odpověď na google.com a nepřídám zpět to lomeno
 # dig @127.0.0.1 -p 3333 www.seznam.cz/adsa
 
 echo "#################################"
