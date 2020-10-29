@@ -59,10 +59,11 @@ int parseArguments(int, char **);
 bool checkResolverName();
 unsigned char *translateName(unsigned char *, unsigned char *);
 int filterFile(std::vector<std::string> &, std::string &);
-void sendToResolver(unsigned char *, int, struct sockaddr_in, int);
+void sendToResolverIpv4(unsigned char *, int, struct sockaddr_in, int);
+void sendToResolverIpv6(unsigned char *, int, struct sockaddr_in, int);
 void changeToDnsNameFormat(unsigned char *, unsigned char *);
 void sigintHandler(int);
-bool is_ipv6();
+bool isIpv6();
 
 int main(int argc, char **argv) {
     signal(SIGINT, sigintHandler);
@@ -75,7 +76,7 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    if (!is_ipv6()) {
+    if (!isIpv6()) {
         if (!checkResolverName()) sigintHandler(1);
     }
 
@@ -141,7 +142,10 @@ void parsePacket(int socket, struct sockaddr_in clientAddr,
             unsigned char name[128];
             std::copy(s.begin(), s.end(), name);
             name[s.length()] = 0;
-            sendToResolver(name, socket, clientAddr, htons(dns->id));
+            if (isIpv6())
+                sendToResolverIpv6(name, socket, clientAddr, htons(dns->id));
+            else
+                sendToResolverIpv4(name, socket, clientAddr, htons(dns->id));
         } else {
             // adress is filtered
             dns->qr = dns->ra = dns->rd = 1;
@@ -162,8 +166,72 @@ void parsePacket(int socket, struct sockaddr_in clientAddr,
     }
 }
 
-void sendToResolver(unsigned char *resolverName, int serverSocket,
-                      struct sockaddr_in clientAddr, int id) {
+void sendToResolverIpv6(unsigned char *resolverName, int serverSocket,
+                        struct sockaddr_in clientAddr, int id) {
+    struct DNS_HEADER *dns = NULL;
+    struct QUESTION *qinfo = NULL;
+    struct sockaddr_in6 dest;
+    int resolver_fd;
+    unsigned char buffer[BUFFER_SIZE], *qname;
+
+    resolver_fd = socket(PF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+
+    dest.sin6_family = AF_INET6;
+    dest.sin6_port = htons(53);
+    inet_pton(AF_INET6, arguments->server, &(dest.sin6_addr));
+
+    dns = (struct DNS_HEADER *)&buffer;
+
+    dns->id = (unsigned short)htons(getpid());
+    dns->qr = 0;
+    dns->opcode = 0;
+    dns->aa = 0;
+    dns->tc = 0;
+    dns->rd = 1;
+    dns->ra = 0;
+    dns->z = 0;
+    dns->ad = 0;
+    dns->cd = 0;
+    dns->rcode = 0;
+    dns->q_count = htons(1);
+    dns->ans_count = 0;
+    dns->auth_count = 0;
+    dns->add_count = 0;
+
+    qname = (unsigned char *)&buffer[sizeof(struct DNS_HEADER)];
+
+    changeToDnsNameFormat(qname, resolverName);
+
+    qinfo = (struct QUESTION *)&buffer[sizeof(struct DNS_HEADER) +
+                                       (strlen((const char *)qname) + 1)];
+
+    qinfo->qtype = htons(T_A);
+    qinfo->qclass = htons(1);
+
+    if (sendto(resolver_fd, (char *)buffer,
+               sizeof(struct DNS_HEADER) + (strlen((const char *)qname) + 1) +
+                   sizeof(struct QUESTION),
+               0, (struct sockaddr *)&dest, sizeof(dest)) < 0) {
+        std::cerr << "sendto failed" << std::endl;
+    }
+
+    unsigned int i = sizeof(dest);
+    unsigned long recvMsgResolverSize;
+
+    recvMsgResolverSize = recvfrom(resolver_fd, (char *)buffer, BUFFER_SIZE, 0,
+                                   (struct sockaddr *)&dest, &i);
+
+    dns = (struct DNS_HEADER *)&buffer;
+    dns->id = htons(id);
+
+    if (recvMsgResolverSize > 0) {
+        sendto(serverSocket, (char *)buffer, recvMsgResolverSize, 0,
+               (struct sockaddr *)&clientAddr, sizeof(clientAddr));
+    }
+}
+
+void sendToResolverIpv4(unsigned char *resolverName, int serverSocket,
+                        struct sockaddr_in clientAddr, int id) {
     struct DNS_HEADER *dns = NULL;
     struct QUESTION *qinfo = NULL;
     struct sockaddr_in dest;
@@ -197,7 +265,7 @@ void sendToResolver(unsigned char *resolverName, int serverSocket,
     qname = (unsigned char *)&buffer[sizeof(struct DNS_HEADER)];
 
     changeToDnsNameFormat(qname, resolverName);
-    
+
     qinfo = (struct QUESTION *)&buffer[sizeof(struct DNS_HEADER) +
                                        (strlen((const char *)qname) + 1)];
 
@@ -297,8 +365,8 @@ bool checkResolverName() {
     return false;
 }
 
-// check if resolver server is IPV6
-bool is_ipv6() {
+// check if resolver server is IPv6
+bool isIpv6() {
     struct sockaddr_in6 ipv6;
     return inet_pton(AF_INET6, arguments->server, &(ipv6.sin6_addr)) != 0;
 }
