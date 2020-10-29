@@ -379,9 +379,9 @@ void loadFile(std::vector<std::string> &vc) {
         while (std::getline(f, line)) {
             if (line[0] != '#' && !line.empty()) vc.push_back(line);
         }
+        f.close();
+        sort(vc.begin(), vc.end());
     }
-    f.close();
-    sort(vc.begin(), vc.end());
 }
 
 // function for parsing arguments
