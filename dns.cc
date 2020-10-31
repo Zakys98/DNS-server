@@ -11,6 +11,7 @@
 #include <csignal>
 #include <fstream>
 #include <iostream>
+#include <regex>
 #include <vector>
 
 #define BUFFER_SIZE 512
@@ -22,28 +23,28 @@ typedef struct args {
     char *filter;
 } Args;
 
-struct DNS_HEADER {
-    unsigned short id;  // identification number
+struct dns_header {
+    unsigned short id;  
 
-    unsigned char rd : 1;      // recursion desired
-    unsigned char tc : 1;      // truncated message
-    unsigned char aa : 1;      // authoritive answer
-    unsigned char opcode : 4;  // purpose of message
-    unsigned char qr : 1;      // query/response flag
+    unsigned char rd : 1;      
+    unsigned char tc : 1;     
+    unsigned char aa : 1;      
+    unsigned char opcode : 4;  
+    unsigned char qr : 1;      
 
-    unsigned char rcode : 4;  // response code
-    unsigned char cd : 1;     // checking disabled
-    unsigned char ad : 1;     // authenticated data
-    unsigned char z : 1;      // its z! reserved
-    unsigned char ra : 1;     // recursion available
+    unsigned char rcode : 4;  
+    unsigned char cd : 1;   
+    unsigned char ad : 1;     
+    unsigned char z : 1;    
+    unsigned char ra : 1;     
 
-    unsigned short q_count;     // number of question entries
-    unsigned short ans_count;   // number of answer entries
-    unsigned short auth_count;  // number of authority entries
-    unsigned short add_count;   // number of resource entries
+    unsigned short q_count;  
+    unsigned short ans_count;   
+    unsigned short auth_count;
+    unsigned short add_count; 
 };
 
-struct QUESTION {
+struct question {
     unsigned short qtype;
     unsigned short qclass;
 };
@@ -58,12 +59,14 @@ void loadFile(std::vector<std::string> &);
 int parseArguments(int, char **);
 bool checkResolverName();
 unsigned char *translateName(unsigned char *, unsigned char *);
-int filterFile(std::vector<std::string> &, std::string &);
+bool filterFile(std::vector<std::string> &, std::string &);
 void sendToResolverIpv4(unsigned char *, int, struct sockaddr_in, int);
 void sendToResolverIpv6(unsigned char *, int, struct sockaddr_in, int);
 void changeToDnsNameFormat(unsigned char *, unsigned char *);
 void sigintHandler(int);
 bool isIpv6();
+std::string excapedString(std::string);
+bool checkDomainName(std::vector<std::string> &, std::string);
 
 int main(int argc, char **argv) {
     signal(SIGINT, sigintHandler);
@@ -121,31 +124,29 @@ int main(int argc, char **argv) {
 void parsePacket(int socket, struct sockaddr_in clientAddr,
                  unsigned char *buffer, unsigned long bufferSize,
                  std::vector<std::string> filteredDomains) {
-    struct DNS_HEADER *dns = NULL;
-    struct QUESTION *qinfo = NULL;
+    struct dns_header *dns = NULL;
+    struct question *qinfo = NULL;
     unsigned char *qname;
 
-    dns = (struct DNS_HEADER *)buffer;
-    qname = (unsigned char *)&buffer[sizeof(struct DNS_HEADER)];
+    dns = (struct dns_header *)buffer;
+    qname = (unsigned char *)&buffer[sizeof(struct dns_header)];
 
-    qinfo = (struct QUESTION *)&buffer[sizeof(struct DNS_HEADER) +
+    qinfo = (struct question *)&buffer[sizeof(struct dns_header) +
                                        (strlen((const char *)qname) + 1)];
 
     // osetrit kdyz prijde odpoved a ne query (pridat else if)
     if (htons(qinfo->qtype) == 1 && htons(dns->qr) == 0 && htons(dns->z) == 0) {
         unsigned char *name_with_sub = translateName(qname, buffer);
-        std::cout << "name with sub " << name_with_sub << std::endl;
         std::string s(reinterpret_cast<char *>(name_with_sub));
-        s = s.substr(0, s.find("/"));
-        if (filterFile(filteredDomains, s) == 0) {
+        // if (!checkDomainName(filteredDomains, s)) {
+        if (!filterFile(filteredDomains, s)) {
             // adress is not filtered
-            unsigned char name[128];
-            std::copy(s.begin(), s.end(), name);
-            name[s.length()] = 0;
             if (isIpv6())
-                sendToResolverIpv6(name, socket, clientAddr, htons(dns->id));
+                sendToResolverIpv6(name_with_sub, socket, clientAddr,
+                                   htons(dns->id));
             else
-                sendToResolverIpv4(name, socket, clientAddr, htons(dns->id));
+                sendToResolverIpv4(name_with_sub, socket, clientAddr,
+                                   htons(dns->id));
         } else {
             // adress is filtered
             dns->qr = dns->ra = dns->rd = 1;
@@ -168,8 +169,8 @@ void parsePacket(int socket, struct sockaddr_in clientAddr,
 
 void sendToResolverIpv6(unsigned char *resolverName, int serverSocket,
                         struct sockaddr_in clientAddr, int id) {
-    struct DNS_HEADER *dns = NULL;
-    struct QUESTION *qinfo = NULL;
+    struct dns_header *dns = NULL;
+    struct question *qinfo = NULL;
     struct sockaddr_in6 dest;
     int resolver_fd;
     unsigned char buffer[BUFFER_SIZE], *qname;
@@ -180,7 +181,7 @@ void sendToResolverIpv6(unsigned char *resolverName, int serverSocket,
     dest.sin6_port = htons(53);
     inet_pton(AF_INET6, arguments->server, &(dest.sin6_addr));
 
-    dns = (struct DNS_HEADER *)&buffer;
+    dns = (struct dns_header *)buffer;
 
     dns->id = (unsigned short)htons(getpid());
     dns->qr = 0;
@@ -198,19 +199,19 @@ void sendToResolverIpv6(unsigned char *resolverName, int serverSocket,
     dns->auth_count = 0;
     dns->add_count = 0;
 
-    qname = (unsigned char *)&buffer[sizeof(struct DNS_HEADER)];
+    qname = (unsigned char *)&buffer[sizeof(struct dns_header)];
 
     changeToDnsNameFormat(qname, resolverName);
 
-    qinfo = (struct QUESTION *)&buffer[sizeof(struct DNS_HEADER) +
+    qinfo = (struct question *)&buffer[sizeof(struct dns_header) +
                                        (strlen((const char *)qname) + 1)];
 
     qinfo->qtype = htons(T_A);
     qinfo->qclass = htons(1);
 
     if (sendto(resolver_fd, (char *)buffer,
-               sizeof(struct DNS_HEADER) + (strlen((const char *)qname) + 1) +
-                   sizeof(struct QUESTION),
+               sizeof(struct dns_header) + (strlen((const char *)qname) + 1) +
+                   sizeof(struct question),
                0, (struct sockaddr *)&dest, sizeof(dest)) < 0) {
         std::cerr << "sendto failed" << std::endl;
     }
@@ -221,7 +222,7 @@ void sendToResolverIpv6(unsigned char *resolverName, int serverSocket,
     recvMsgResolverSize = recvfrom(resolver_fd, (char *)buffer, BUFFER_SIZE, 0,
                                    (struct sockaddr *)&dest, &i);
 
-    dns = (struct DNS_HEADER *)&buffer;
+    dns = (struct dns_header *)&buffer;
     dns->id = htons(id);
 
     if (recvMsgResolverSize > 0) {
@@ -232,8 +233,8 @@ void sendToResolverIpv6(unsigned char *resolverName, int serverSocket,
 
 void sendToResolverIpv4(unsigned char *resolverName, int serverSocket,
                         struct sockaddr_in clientAddr, int id) {
-    struct DNS_HEADER *dns = NULL;
-    struct QUESTION *qinfo = NULL;
+    struct dns_header *dns = NULL;
+    struct question *qinfo = NULL;
     struct sockaddr_in dest;
     int resolver_fd;
     unsigned char buffer[BUFFER_SIZE], *qname;
@@ -244,7 +245,7 @@ void sendToResolverIpv4(unsigned char *resolverName, int serverSocket,
     dest.sin_port = htons(53);
     dest.sin_addr.s_addr = inet_addr(arguments->server);
 
-    dns = (struct DNS_HEADER *)&buffer;
+    dns = (struct dns_header *)buffer;
 
     dns->id = (unsigned short)htons(getpid());
     dns->qr = 0;
@@ -262,19 +263,19 @@ void sendToResolverIpv4(unsigned char *resolverName, int serverSocket,
     dns->auth_count = 0;
     dns->add_count = 0;
 
-    qname = (unsigned char *)&buffer[sizeof(struct DNS_HEADER)];
+    qname = (unsigned char *)&buffer[sizeof(struct dns_header)];
 
     changeToDnsNameFormat(qname, resolverName);
 
-    qinfo = (struct QUESTION *)&buffer[sizeof(struct DNS_HEADER) +
+    qinfo = (struct question *)&buffer[sizeof(struct dns_header) +
                                        (strlen((const char *)qname) + 1)];
 
     qinfo->qtype = htons(T_A);
     qinfo->qclass = htons(1);
 
     if (sendto(resolver_fd, (char *)buffer,
-               sizeof(struct DNS_HEADER) + (strlen((const char *)qname) + 1) +
-                   sizeof(struct QUESTION),
+               sizeof(struct dns_header) + (strlen((const char *)qname) + 1) +
+                   sizeof(struct question),
                0, (struct sockaddr *)&dest, sizeof(dest)) < 0) {
         std::cerr << "sendto failed" << std::endl;
     }
@@ -285,7 +286,7 @@ void sendToResolverIpv4(unsigned char *resolverName, int serverSocket,
     recvMsgResolverSize = recvfrom(resolver_fd, (char *)buffer, BUFFER_SIZE, 0,
                                    (struct sockaddr *)&dest, &i);
 
-    dns = (struct DNS_HEADER *)&buffer;
+    dns = (struct dns_header *)&buffer;
     dns->id = htons(id);
 
     if (recvMsgResolverSize > 0) {
@@ -310,10 +311,10 @@ void changeToDnsNameFormat(unsigned char *dns, unsigned char *host) {
     *dns++ = '\0';
 }
 
-int filterFile(std::vector<std::string> &vc, std::string &s) {
+bool filterFile(std::vector<std::string> &vc, std::string &s) {
     std::vector<std::string>::iterator it = find(vc.begin(), vc.end(), s);
-    if (it != vc.end()) return 1;
-    return 0;
+    if (it != vc.end()) return true;
+    return false;
 }
 
 unsigned char *translateName(unsigned char *reader, unsigned char *buffer) {
@@ -412,6 +413,22 @@ int parseArguments(int argc, char **argv) {
     }
     if (arguments->filter == NULL || arguments->server == NULL) return 1;
     return 0;
+}
+
+std::string excapedString(std::string s) {
+    std::regex e("(\\.|\\^|\\$|\\||\\?|\\*|\\+|\\(|\\)|\\{|\\[)");
+    return regex_replace(s, e, "\\$1");
+}
+
+bool checkDomainName(std::vector<std::string> &vc, std::string domainName) {
+    std::smatch smat;
+    for (std::vector<std::string>::iterator iter = vc.begin(); iter != vc.end();
+         iter++) {
+        std::string nameFromFile = excapedString(*iter);
+        std::regex reg(".*" + nameFromFile + "$");
+        if (regex_match(domainName, smat, reg)) return true;
+    }
+    return false;
 }
 
 // function to clean memory after CTRL + C
