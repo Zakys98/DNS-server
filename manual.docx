@@ -1,1 +1,72 @@
-manual
+﻿Vysoké učení technické v Brně
+Fakulta informačních technologií
+
+
+
+
+
+
+
+
+ISA
+Síťové aplikace a správa sítí
+Programování síťové služby: 
+Filtrující DNS resolver
+
+
+
+
+
+
+
+
+
+
+
+
+8.11.2020		   				  Jiří Žák(xzakji02)
+Obsah:
+Zadání
+Úkolem je napsat program dns, který bude filtrovat dotazy typu A směřující na domény v rámci dodaného seznamu a jejich poddomény. Ostatní dotazy bude přeposílat v nezměněné podobě specifikovanému resolveru. Odpovědi na dříve přeposlané dotazy bude program předávat původnímu tazateli. Stačí podporovat pouze UDP komunikaci a dotazy typu A.
+
+
+Problematika
+DNS neboli Domain name system je systém doménových jmen s informacemi na kterém serveru se domény nachází. Jedná se o „překladač“ doménových jmen na IP adresy a obráceně. DNS toho samozřejmě podporuje více, ale v našem případě stačí pouze uvažovat o překladu doménového jména na IP adresu.
+
+
+Požadovaný výstup
+Samotná aplikace nevypisuje nic. Klient, po obdržení odpovědi, může vypsat zachycenou zprávu, ale to záleží čistě na implementaci klienta. 
+
+
+Spuštění aplikace
+Program je navržen primárně pro systémy Linux. Po přeložení souboru pomocí přiloženého Makefilu se vytvoří binární soubor dns(pomocí příkazu make). Pro spustění zadáme příkaz ./dns. Program musíme spustit s příslušnými argumenty, jinak nebude fungovat.
+
+    1. -s <server>		-	povinné 
+    2. -p <port>			-	nepovinné
+    3. -f <filter_file> 	-	povinné
+
+Vysvětlení argumentů:
+    1. -s <server> 
+       - server na který bude resolver zasílat nevyfiltrované dotazy. Je podporováno IPv4, IPv6 a doménové jméno
+    2. -p <port> 
+       - port na kterém bude resolver poslouchat. Implicitně je nasteven port 53.
+    3. -f <filter_file> 
+       - soubor s doménovými jmény, které budou vyfiltrovány 
+
+
+
+
+
+
+Implementace
+Program je implementovám v jazyce C++. Program byl původně vytvářen v jazyce C, ale po přehodnocení byl přepracován do C++. Důvod tohoto přepracování je datový typ „string“ a vector, což výrazně ulehčí práci a čas s případnou alternativní implementaci v jazyce C.
+
+    1. Parsování argumentů
+       
+       Program nejprve kontroluje vstupní argumenty od uživatele. Pokud uživatel nezadá argument -s nebo -f, tak se program ani nespustí. Pokud jsou tyto dva argumenty zadané, tak se zapíší do připravené struktury a program může dál pokračovat. Dále se provádí speciální kontrola argumentu -s, u kterého se zjišťuje v jakém je formátu. Nakonec se otevře zadaný soubor a přečtou se z něho doménové jména, které se zapíší do vectoru.
+       
+    2. Dns
+       
+       Hlavní část programu začíná otevření spojení pro klienta pomocí funkce socket a bind. Pomocí funkce socket otevřeme UDP spojení a pomocí funkce bind nastavíme odposlech na zadaný port. Poté program vstoupí do nekonečné smyčky, kde čeká na příchozí pakety s dotazy. 
+                                           Poté co přijde nějaký paket se zavolá funkce parsePacket, která ho zpracuje a rozdělí na dvě základní části, DNS hlavičku a otázku. Z flagů v dns hlavičce zjistí, jestli je paket validní, a podle toho ho pošle do další funkce ke korektnímu zpracování. Pokud z hlavičky zjistí, že paket je jiného typu než A, tak nastaví flag rcode na Not implemented, flag qr na answer a pošle paket zpět ke klientovi. 
+
