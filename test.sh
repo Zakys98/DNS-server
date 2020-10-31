@@ -1,12 +1,12 @@
 echo "#################################"
-echo "Good adress"
+echo "Good adresses"
 echo "#################################"
 dig @127.0.0.1 -p 3333 google.com
 dig @127.0.0.1 -p 3333 www.seznam.com
 dig @127.0.0.1 -p 3333 www.seznam.cz
 
 echo "#################################"
-echo "Filtered adress"
+echo "Filtered adresses"
 echo "#################################"
 dig @127.0.0.1 -p 3333 24log.com
 dig @127.0.0.1 -p 3333 thebugs.ws	
@@ -18,7 +18,7 @@ dig @127.0.0.1 -p 3333 -x 216.58.220.110
 dig @127.0.0.1 -p 3333 mx fit.vutbr.cz
 
 echo "#################################"
-echo "not existing adress"
+echo "Not existing adresses"
 echo "#################################"
 dig @127.0.0.1 -p 3333 gooasdasdagle.com
 dig @127.0.0.1 -p 3333 www.seznam.cz/adsa
@@ -30,5 +30,3 @@ dig @127.0.0.1 -p 3333 www.seznam.cz/adsa
 
 # refused query
 # dig @ns1.google.com yahoo.com
-
-
