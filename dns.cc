@@ -11,8 +11,7 @@
 #include <csignal>
 #include <fstream>
 #include <iostream>
-#include <regex>
-#include <vector>
+#include <unordered_map>
 
 #define BUFFER_SIZE 512
 #define T_A 1
@@ -24,24 +23,24 @@ typedef struct args {
 } Args;
 
 struct dns_header {
-    unsigned short id;  
+    unsigned short id;
 
-    unsigned char rd : 1;      
-    unsigned char tc : 1;     
-    unsigned char aa : 1;      
-    unsigned char opcode : 4;  
-    unsigned char qr : 1;      
+    unsigned char rd : 1;
+    unsigned char tc : 1;
+    unsigned char aa : 1;
+    unsigned char opcode : 4;
+    unsigned char qr : 1;
 
-    unsigned char rcode : 4;  
-    unsigned char cd : 1;   
-    unsigned char ad : 1;     
-    unsigned char z : 1;    
-    unsigned char ra : 1;     
+    unsigned char rcode : 4;
+    unsigned char cd : 1;
+    unsigned char ad : 1;
+    unsigned char z : 1;
+    unsigned char ra : 1;
 
-    unsigned short q_count;  
-    unsigned short ans_count;   
+    unsigned short q_count;
+    unsigned short ans_count;
     unsigned short auth_count;
-    unsigned short add_count; 
+    unsigned short add_count;
 };
 
 struct question {
@@ -49,24 +48,72 @@ struct question {
     unsigned short qclass;
 };
 
+class TreeNode {
+   public:
+    TreeNode(const std::string &name) { addNode(name); };
+
+    void setFilterable(bool f) { filterable = f; }
+
+    void addNode(const std::string &domain) {
+        if (domain.empty()) {
+            filterable = true;
+            return;
+        }
+        std::size_t found = domain.find_last_of(".");
+        std::string split = domain.substr(found + 1, domain.size());
+        if (map.find(split) == map.end()) {
+            if (domain == split)
+                map.insert(std::make_pair(split, new TreeNode("")));
+            else
+                map.insert(std::make_pair(
+                    split, new TreeNode(domain.substr(0, found))));
+        } else {
+            if (domain == split)
+                map.find(split)->second->addNode("");
+            else
+                map.find(split)->second->addNode(domain.substr(0, found));
+        }
+    }
+
+    static bool filterDomain(const std::string &domain, TreeNode *td) {
+        if (td->filterable) return true;
+        std::size_t found = domain.find_last_of(".");
+        std::string split = domain.substr(found + 1, domain.size());
+        if (td->map.find(split) != td->map.end())
+            return filterDomain(domain.substr(0, found), td->map.at(split));
+        return false;
+    }
+
+    static void clearMemory(TreeNode *mp) {
+        for (std::unordered_map<std::string, TreeNode *>::iterator it =
+                 mp->map.begin();
+             it != mp->map.end(); it++) {
+            if (!it->second->map.empty()) clearMemory(it->second);
+            delete it->second;
+        }
+    }
+
+   private:
+    bool filterable = false;
+    std::unordered_map<std::string, TreeNode *> map;
+};
+
 // Global variables
 Args *arguments;
+TreeNode filteredDomains("");
 
 // Prototypes
 void parsePacket(int, struct sockaddr_in, unsigned char *, unsigned long,
-                 std::vector<std::string>);
-void loadFile(std::vector<std::string> &);
+                 TreeNode &);
+void loadFile(TreeNode &tree);
 int parseArguments(int, char **);
 bool checkResolverName();
 unsigned char *translateName(unsigned char *, unsigned char *);
-bool filterFile(std::vector<std::string> &, std::string &);
 void sendToResolverIpv4(unsigned char *, int, struct sockaddr_in, int);
 void sendToResolverIpv6(unsigned char *, int, struct sockaddr_in, int);
 void changeToDnsNameFormat(unsigned char *, unsigned char *);
 void sigintHandler(int);
 bool isIpv6();
-std::string excapedString(std::string);
-bool checkDomainName(std::vector<std::string> &, std::string);
 
 int main(int argc, char **argv) {
     signal(SIGINT, sigintHandler);
@@ -83,7 +130,6 @@ int main(int argc, char **argv) {
         if (!checkResolverName()) sigintHandler(1);
     }
 
-    std::vector<std::string> filteredDomains;
     loadFile(filteredDomains);
 
     int server_fd;
@@ -123,7 +169,7 @@ int main(int argc, char **argv) {
 
 void parsePacket(int socket, struct sockaddr_in clientAddr,
                  unsigned char *buffer, unsigned long bufferSize,
-                 std::vector<std::string> filteredDomains) {
+                 TreeNode &filteredDomains) {
     struct dns_header *dns = NULL;
     struct question *qinfo = NULL;
     unsigned char *qname;
@@ -138,8 +184,7 @@ void parsePacket(int socket, struct sockaddr_in clientAddr,
     if (htons(qinfo->qtype) == 1 && htons(dns->qr) == 0 && htons(dns->z) == 0) {
         unsigned char *name_with_sub = translateName(qname, buffer);
         std::string s(reinterpret_cast<char *>(name_with_sub));
-        // if (!checkDomainName(filteredDomains, s)) {
-        if (!filterFile(filteredDomains, s)) {
+        if (!TreeNode::filterDomain(s, &filteredDomains)) {
             // adress is not filtered
             if (isIpv6())
                 sendToResolverIpv6(name_with_sub, socket, clientAddr,
@@ -213,7 +258,7 @@ void sendToResolverIpv6(unsigned char *resolverName, int serverSocket,
                sizeof(struct dns_header) + (strlen((const char *)qname) + 1) +
                    sizeof(struct question),
                0, (struct sockaddr *)&dest, sizeof(dest)) < 0) {
-        std::cerr << "sendto failed" << std::endl;
+        std::cerr << "IPv6 sendto failed" << std::endl;
     }
 
     unsigned int i = sizeof(dest);
@@ -311,12 +356,6 @@ void changeToDnsNameFormat(unsigned char *dns, unsigned char *host) {
     *dns++ = '\0';
 }
 
-bool filterFile(std::vector<std::string> &vc, std::string &s) {
-    std::vector<std::string>::iterator it = find(vc.begin(), vc.end(), s);
-    if (it != vc.end()) return true;
-    return false;
-}
-
 unsigned char *translateName(unsigned char *reader, unsigned char *buffer) {
     unsigned char *name;
     unsigned int p = 0, offset;
@@ -372,16 +411,16 @@ bool isIpv6() {
     return inet_pton(AF_INET6, arguments->server, &(ipv6.sin6_addr)) != 0;
 }
 
-void loadFile(std::vector<std::string> &vc) {
+void loadFile(TreeNode &tree) {
     std::ifstream f;
     f.open(arguments->filter);
     if (f.is_open()) {
         std::string line;
         while (std::getline(f, line)) {
-            if (line[0] != '#' && !line.empty()) vc.push_back(line);
+            if (line[0] != '#' && !line.empty()) tree.addNode(line);
         }
         f.close();
-        sort(vc.begin(), vc.end());
+        tree.setFilterable(false);
     }
 }
 
@@ -415,26 +454,11 @@ int parseArguments(int argc, char **argv) {
     return 0;
 }
 
-std::string excapedString(std::string s) {
-    std::regex e("(\\.|\\^|\\$|\\||\\?|\\*|\\+|\\(|\\)|\\{|\\[)");
-    return regex_replace(s, e, "\\$1");
-}
-
-bool checkDomainName(std::vector<std::string> &vc, std::string domainName) {
-    std::smatch smat;
-    for (std::vector<std::string>::iterator iter = vc.begin(); iter != vc.end();
-         iter++) {
-        std::string nameFromFile = excapedString(*iter);
-        std::regex reg(".*" + nameFromFile + "$");
-        if (regex_match(domainName, smat, reg)) return true;
-    }
-    return false;
-}
-
 // function to clean memory after CTRL + C
 void sigintHandler(int number) {
     free(arguments->filter);
     free(arguments->server);
     free(arguments);
+    TreeNode::clearMemory(&filteredDomains);
     exit(number);
 }
