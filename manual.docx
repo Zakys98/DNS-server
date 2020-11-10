@@ -25,7 +25,8 @@ Filtrující DNS resolver
 
 
 8.11.2020		   				  Jiří Žák(xzakji02)
-Obsah:
+Obsah
+
 Zadání
 Úkolem je napsat program dns, který bude filtrovat dotazy typu A směřující na domény v rámci dodaného seznamu a jejich poddomény. Ostatní dotazy bude přeposílat v nezměněné podobě specifikovanému resolveru. Odpovědi na dříve přeposlané dotazy bude program předávat původnímu tazateli. Stačí podporovat pouze UDP komunikaci a dotazy typu A.
 
@@ -67,6 +68,9 @@ Program je implementovám v jazyce C++. Program byl původně vytvářen v jazyc
        
     2. Dns
        
-       Hlavní část programu začíná otevření spojení pro klienta pomocí funkce socket a bind. Pomocí funkce socket otevřeme UDP spojení a pomocí funkce bind nastavíme odposlech na zadaný port. Poté program vstoupí do nekonečné smyčky, kde čeká na příchozí pakety s dotazy. 
-                                           Poté co přijde nějaký paket se zavolá funkce parsePacket, která ho zpracuje a rozdělí na dvě základní části, DNS hlavičku a otázku. Z flagů v dns hlavičce zjistí, jestli je paket validní, a podle toho ho pošle do další funkce ke korektnímu zpracování. Pokud z hlavičky zjistí, že paket je jiného typu než A, tak nastaví flag rcode na Not implemented, flag qr na answer a pošle paket zpět ke klientovi. 
+       Hlavní část programu začíná otevřením spojení pro klienta pomocí funkce socket a bind. Pomocí funkce socket otevřeme UDP spojení a pomocí funkce bind nastavíme odposlech na zadaný port. Poté program vstoupí do nekonečné smyčky, kde čeká na příchozí pakety s dotazy. Jakmile přijde nějaký paket, tak se zavolá funkce parsePacket, která ho zpracuje a rozdělí na dvě základní části, DNS hlavičku a otázku. Z flagů v dns hlavičce zjistí, jestli je paket validní, a podle toho ho pošle do další funkce k dalšímu zpracování. Pokud z hlavičky zjistí, že paket je jiného typu než A, tak nastaví flag rcode na Not implemented, flag qr na answer a pošle paket zpět ke klientovi. 
+
+Testování
+
+Použité zdroje & citace
 

@@ -1,5 +1,5 @@
 echo "#################################"
-echo "Good adresses"
+echo "Good adresses -- NOERROR"
 echo "#################################"
 dig @127.0.0.1 -p 3333 google.com
 dig @127.0.0.1 -p 3333 www.seznam.com
@@ -7,22 +7,23 @@ dig @127.0.0.1 -p 3333 www.seznam.cz
 dig @localhost -p 3333 stackoverflow.com
 
 echo "#################################"
-echo "Filtered adresses"
+echo "Filtered adresses -- REFUSED"
 echo "#################################"
 dig @127.0.0.1 -p 3333 24log.com
 dig @127.0.0.1 -p 3333 thebugs.ws
 dig @127.0.0.1 -p 3333 lol.thebugs.ws
 dig @localhost -p 3333 wow.com
 dig @localhost -p 3333 asda.wow.com
+dig @localhost -p 3333 as.ncie.wow.com
 
 echo "#################################"
-echo "Not implemented"
+echo "Not implemented -- NOTIMP"
 echo "#################################"
 dig @127.0.0.1 -p 3333 -x 216.58.220.110
 dig @127.0.0.1 -p 3333 mx fit.vutbr.cz
 
 echo "#################################"
-echo "Not existing adresses"
+echo "Not existing adresses -- NXDOMAIN"
 echo "#################################"
 dig @127.0.0.1 -p 3333 gooasdasdagle.com
 dig @127.0.0.1 -p 3333 www.seznam.cz/adsa
