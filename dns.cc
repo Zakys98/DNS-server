@@ -267,7 +267,7 @@ void sendToResolverIpv6(unsigned char *resolverName, int serverSocket,
     recvMsgResolverSize = recvfrom(resolver_fd, (char *)buffer, BUFFER_SIZE, 0,
                                    (struct sockaddr *)&dest, &i);
 
-    dns = (struct dns_header *)&buffer;
+    dns = (struct dns_header *)buffer;
     dns->id = htons(id);
 
     if (recvMsgResolverSize > 0) {
@@ -331,7 +331,7 @@ void sendToResolverIpv4(unsigned char *resolverName, int serverSocket,
     recvMsgResolverSize = recvfrom(resolver_fd, (char *)buffer, BUFFER_SIZE, 0,
                                    (struct sockaddr *)&dest, &i);
 
-    dns = (struct dns_header *)&buffer;
+    dns = (struct dns_header *)buffer;
     dns->id = htons(id);
 
     if (recvMsgResolverSize > 0) {

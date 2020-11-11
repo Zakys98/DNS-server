@@ -25,6 +25,7 @@ Filtrující DNS resolver
 
 
 8.11.2020		   				  Jiří Žák(xzakji02)
+
 Obsah
 
 Zadání
@@ -64,11 +65,11 @@ Program je implementovám v jazyce C++. Program byl původně vytvářen v jazyc
 
     1. Parsování argumentů
        
-       Program nejprve kontroluje vstupní argumenty od uživatele. Pokud uživatel nezadá argument -s nebo -f, tak se program ani nespustí. Pokud jsou tyto dva argumenty zadané, tak se zapíší do připravené struktury a program může dál pokračovat. Dále se provádí speciální kontrola argumentu -s, u kterého se zjišťuje v jakém je formátu. Nakonec se otevře zadaný soubor a přečtou se z něho doménové jména, které se zapíší do vectoru.
+       Program nejprve kontroluje vstupní argumenty od uživatele. Pokud uživatel nezadá argument -s nebo -f, tak se program ani nespustí. Pokud jsou tyto dva argumenty zadané, tak se zapíší do připravené struktury a program může dál pokračovat. Dále se provádí speciální kontrola argumentu -s, u kterého se zjišťuje v jakém je formátu. Nakonec se otevře zadaný soubor a přečtou se z něho doménové jména, které se zapíší do hashovacího stromu, který nám zajistí rychlé filtrování poddomén.
        
     2. Dns
        
-       Hlavní část programu začíná otevřením spojení pro klienta pomocí funkce socket a bind. Pomocí funkce socket otevřeme UDP spojení a pomocí funkce bind nastavíme odposlech na zadaný port. Poté program vstoupí do nekonečné smyčky, kde čeká na příchozí pakety s dotazy. Jakmile přijde nějaký paket, tak se zavolá funkce parsePacket, která ho zpracuje a rozdělí na dvě základní části, DNS hlavičku a otázku. Z flagů v dns hlavičce zjistí, jestli je paket validní, a podle toho ho pošle do další funkce k dalšímu zpracování. Pokud z hlavičky zjistí, že paket je jiného typu než A, tak nastaví flag rcode na Not implemented, flag qr na answer a pošle paket zpět ke klientovi. 
+       Hlavní část programu začíná otevřením spojení pro klienta pomocí funkce socket a bind. Pomocí funkce socket otevřeme UDP spojení a pomocí funkce bind nastavíme odposlech na zadaný port. Poté program vstoupí do nekonečné smyčky, kde čeká na příchozí pakety s dotazy. Jakmile přijde nějaký paket, tak se zavolá funkce parsePacket, která ho zpracuje a rozdělí na dvě základní části, DNS hlavičku a otázku. Z flagů v dns hlavičce zjistí, jestli je dotaz validní, a podle toho ho pošle do dál ke zpracování. Pokud z hlavičky zjistí, že dotaz není validní, tak nastaví flag rcode na Not implemented, flag qr na answer a pošle paket s odpovědí zpět ke klientovi. Dotaz není validní pokud je jiného typu než A typ. Pokud je dotaz validní, tak se z otázky vyjme doménové jméno, a funkce filterDomain zkontroluje, jestli náhodou není ve vyfiltrovaných jménech. Pokud ano, tak program posílá zpět pkaet s odpověďí, kde se nastaví flag rcode na Refused. Pokud je však adresa nevyfiltrována, tak se zjistí, jestli zadaný  server má ipv4 nebo ipv6 adresu a podle toho se pošle do příslušné funkce. Tyto dvě funkce se liší pouze tím, že jedna vytváří spojení s ipv4 a druhá s ipv6 adresou. Jinak obě vytváří nový DNS paket s daným doménovým jménem, který zasílají na uživatelem zadaný server a čekají na odpověď. Poté co přijde odpověď, tak změní id v DNS hlavičce a posílají zpět paket původnímu klientovi. Poté server čeká na další paket a následně po přijetí paketu se tato akce opakuje. 
 
 Testování
 
