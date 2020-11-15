@@ -18,3 +18,4 @@
     Makefile - soubor pro překlad programu
     manual.pdf - soubor s uživatelským manuálem k programu
     test.sh - soubor s předpřipravenými testy na dns program 
+    bad_domain_name - soubor s filtrovanými adresami
