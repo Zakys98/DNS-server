@@ -16,12 +16,14 @@
 #define BUFFER_SIZE 512
 #define T_A 1
 
+// struct for arguments
 typedef struct args {
     char *server;
     int port;
     char *filter;
 } Args;
 
+// struct dns header
 struct dns_header {
     unsigned short id;
 
@@ -48,6 +50,7 @@ struct question {
     unsigned short qclass;
 };
 
+// class for filtered domain names
 class TreeNode {
    public:
     TreeNode(const std::string &name) { addNode(name); };
@@ -75,6 +78,7 @@ class TreeNode {
         }
     }
 
+    // find domain name
     static bool filterDomain(const std::string &domain, TreeNode *td) {
         if (td->filterable) return true;
         std::size_t found = domain.find_last_of(".");
@@ -84,6 +88,7 @@ class TreeNode {
         return false;
     }
 
+    // clear memory before end
     static void clearMemory(TreeNode *mp) {
         for (std::unordered_map<std::string, TreeNode *>::iterator it =
                  mp->map.begin();
@@ -167,6 +172,8 @@ int main(int argc, char **argv) {
     return 0;
 }
 
+
+// main function to parse packet
 void parsePacket(int socket, struct sockaddr_in clientAddr,
                  unsigned char *buffer, unsigned long bufferSize,
                  TreeNode &filteredDomains) {
@@ -212,6 +219,7 @@ void parsePacket(int socket, struct sockaddr_in clientAddr,
     }
 }
 
+// send packet to ipv6 server
 void sendToResolverIpv6(unsigned char *resolverName, int serverSocket,
                         struct sockaddr_in clientAddr, int id) {
     struct dns_header *dns = NULL;
@@ -276,6 +284,7 @@ void sendToResolverIpv6(unsigned char *resolverName, int serverSocket,
     }
 }
 
+// send packet to ipv4 server
 void sendToResolverIpv4(unsigned char *resolverName, int serverSocket,
                         struct sockaddr_in clientAddr, int id) {
     struct dns_header *dns = NULL;
@@ -340,6 +349,7 @@ void sendToResolverIpv4(unsigned char *resolverName, int serverSocket,
     }
 }
 
+//change from www.google.com to 3www6google3com
 void changeToDnsNameFormat(unsigned char *dns, unsigned char *host) {
     unsigned int lock = 0;
     strcat((char *)host, ".");
@@ -356,6 +366,7 @@ void changeToDnsNameFormat(unsigned char *dns, unsigned char *host) {
     *dns++ = '\0';
 }
 
+// get name from buffer
 unsigned char *translateName(unsigned char *reader, unsigned char *buffer) {
     unsigned char *name;
     unsigned int p = 0, offset;
@@ -388,6 +399,7 @@ unsigned char *translateName(unsigned char *reader, unsigned char *buffer) {
     return name;
 }
 
+// check if server name can be translated
 bool checkResolverName() {
     struct hostent *he = NULL;
     struct in_addr a;
@@ -411,6 +423,7 @@ bool isIpv6() {
     return inet_pton(AF_INET6, arguments->server, &(ipv6.sin6_addr)) != 0;
 }
 
+// load file to TreeNode
 void loadFile(TreeNode &tree) {
     std::ifstream f;
     f.open(arguments->filter);
