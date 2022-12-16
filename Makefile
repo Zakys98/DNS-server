@@ -19,4 +19,4 @@ pack:
 	tar -cf xzakji02.tar bad_domain_name dns.cc test.sh README.md Makefile manual.pdf 
 
 clean:
-	rm *.o dns xzakji02.tar
+	rm -f *.o dns xzakji02.tar

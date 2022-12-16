@@ -349,7 +349,11 @@ void sendToResolverIpv4(unsigned char *resolverName, int serverSocket,
     }
 }
 
-//change from www.google.com to 3www6google3com
+// DNS Query Program on Linux
+// Autor : Silver Moon (m00n.silv3r@gmail.com)
+// Datum : 29/4/2009
+// https://gist.github.com/fffaraz/9d9170b57791c28ccda9255b48315168
+// change from www.google.com to 3www6google3com
 void changeToDnsNameFormat(unsigned char *dns, unsigned char *host) {
     unsigned int lock = 0;
     strcat((char *)host, ".");
@@ -366,6 +370,10 @@ void changeToDnsNameFormat(unsigned char *dns, unsigned char *host) {
     *dns++ = '\0';
 }
 
+// DNS Query Program on Linux
+// Autor : Silver Moon (m00n.silv3r@gmail.com)
+// Datum : 29/4/2009
+// https://gist.github.com/fffaraz/9d9170b57791c28ccda9255b48315168
 // get name from buffer
 unsigned char *translateName(unsigned char *reader, unsigned char *buffer) {
     unsigned char *name;
